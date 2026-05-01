@@ -141,8 +141,8 @@ esp_reset_reason_t System::showLastResetReason() {
 }
 
 void System::showError(const char *error_message, uint32_t error_code) {
-    // is this error already shown? yes, do nothing
-    if (m_showsOverlay && m_currentErrorCode == error_code) {
+    // we are already displaying an error
+    if (m_showsOverlay && m_currentErrorCode != 0) {
         return;
     }
     m_display->showError(error_message, error_code);
@@ -164,10 +164,67 @@ void System::taskWrapper(void* pvParameters) {
     systemInstance->task();
 }
 
+void System::trigger()
+{
+    pthread_mutex_lock(&m_loop_mutex);
+    pthread_cond_signal(&m_loop_cond);
+    pthread_mutex_unlock(&m_loop_mutex);
+}
+
+void System::timerWrapper(TimerHandle_t xTimer)
+{
+    // Retrieve 'this' pointer from timer ID
+    System *task = (System *) pvTimerGetTimerID(xTimer);
+    if (!task) {
+        return;
+    }
+    task->trigger();
+}
+
+bool System::startTimer()
+{
+    // Create the timer
+    m_timer = xTimerCreate(TAG, pdMS_TO_TICKS(HR_INTERVAL), pdTRUE, (void *) this, timerWrapper);
+
+    if (m_timer == NULL) {
+        ESP_LOGE(TAG, "Failed to create timer");
+        return false;
+    }
+
+    // Start the timer
+    if (xTimerStart(m_timer, 0) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to start timer");
+        return false;
+    }
+    return true;
+}
+
+void System::pushHistory() {
+    static float filteredVreg = 0.0f;
+    static float filteredAsicTemp = 0.0f;
+    constexpr float alpha = 0.50f; // slight smoothing
+
+    uint64_t timestamp = esp_timer_get_time() / 1000llu;
+    float hashrate = HASHRATE_MONITOR.getHashrate();
+    float vregTemp = POWER_MANAGEMENT_MODULE.getVRTemp();
+    float asicTemp = POWER_MANAGEMENT_MODULE.getChipTempMax();
+
+    if (!filteredVreg || !filteredAsicTemp) {
+        filteredVreg = vregTemp;
+        filteredAsicTemp = asicTemp;
+    } else {
+        filteredVreg = vregTemp * alpha + (1.0f - alpha) * filteredVreg;
+        filteredAsicTemp = asicTemp * alpha + (1.0f - alpha) * filteredAsicTemp;
+    }
+
+    m_history->push(hashrate, filteredVreg, filteredAsicTemp, timestamp);
+}
+
 void System::task() {
     initSystem();
     clearDisplay();
     initConnection();
+    startTimer();
 
     ESP_LOGI(TAG, "SYSTEM_task started");
 
@@ -208,10 +265,15 @@ void System::task() {
     int toggle = 1;
 
     while (1) {
+        pthread_mutex_lock(&m_loop_mutex);
+        pthread_cond_wait(&m_loop_cond, &m_loop_mutex); // Wait for the timer
+        pthread_mutex_unlock(&m_loop_mutex);
+
         if (POWER_MANAGEMENT_MODULE.isShutdown()) {
             ESP_LOGW(TAG, "suspended");
             vTaskSuspend(NULL);
         }
+
         // update IP on the screen if it is available
         if (connect_get_ip_addr(m_ipAddress, sizeof(m_ipAddress))) {
             if (strcmp(m_ipAddress, lastIpAddress) != 0) {
@@ -240,7 +302,7 @@ void System::task() {
         m_display->updateCurrentSettings(toggle);
         m_display->refreshScreen();
 
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        pushHistory();
     }
 }
 

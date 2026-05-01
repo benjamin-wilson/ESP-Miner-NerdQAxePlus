@@ -18,22 +18,13 @@ export class AppComponent {
     // Set available languages
     translate.addLangs(['en', 'fr', 'es', 'de', 'it', 'ro']);
 
-    // Set default language
     translate.setDefaultLang('en');
 
-    // Get language from localStorage or use browser language
-    const savedLang = localStorage.getItem('language');
-    const browserLang = navigator.language.split('-')[0];
-    const defaultLang = savedLang || (translate.getLangs().includes(browserLang) ? browserLang : 'en');
-
-    translate.use(defaultLang);
-
-    // Listen to language changes from store
+    // Store holds the active language (initialized from localStorage or 'en').
+    // Subscribing here covers both initial load and user-triggered changes.
     this.store.select(fromI18n.selectLanguage).subscribe(language => {
-      if (language) {
-        translate.use(language);
-        localStorage.setItem('language', language);
-      }
+      translate.use(language);
+      localStorage.setItem('language', language);
     });
   }
 }

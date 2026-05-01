@@ -38,6 +38,7 @@
 #include "system.h"
 #include "wifi_health.h"
 #include "guards.h"
+#include "utils.h"
 
 #define STRATUM_WATCHDOG_TIMEOUT_SECONDS 3600
 
@@ -273,14 +274,15 @@ extern "C" void app_main(void)
     // set the startup_done flag
     SYSTEM_MODULE.setStartupDone();
 
+
     // when a username is configured we will continue with startup and start mining
     const char *username = Config::nvs_config_get_string(NVS_CONFIG_STRATUM_USER, NULL); // TODO
     if (username) {
         // wifi is connected, switch the AP off
         wifi_softap_off();
 
-        discordAlerter.init();
-        discordAlerter.loadConfig();
+        // start the discord alerter early
+        discordAlerter.start();
 
         // initialize OTP
         if (!otp.init()) {
@@ -305,9 +307,9 @@ extern "C" void app_main(void)
         xTaskCreate(create_jobs_task, "stratum miner", 8192, NULL, 10, NULL);
         xTaskCreate(ASIC_result_task, "asic result", 8192, NULL, 15, NULL);
         xTaskCreate(influx_task, "influx", 8192, NULL, 1, NULL);
-        xTaskCreate(APIs_FETCHER.taskWrapper, "apis ticker", 4096, (void *) &APIs_FETCHER, 5, NULL);
-        xTaskCreate(wifi_monitor_task, "wifi monitor", 4096, NULL, 1, NULL);
-        xTaskCreate(FACTORY_OTA_UPDATER.taskWrapper, "ota updater", 4096, (void *) &FACTORY_OTA_UPDATER, 1, NULL);
+        xTaskCreatePSRAM(APIs_FETCHER.taskWrapper, "apis ticker", 8192, (void *) &APIs_FETCHER, 5, NULL);
+        xTaskCreatePSRAM(wifi_monitor_task, "wifi monitor", 4096, NULL, 1, NULL);
+        xTaskCreate(FACTORY_OTA_UPDATER.taskWrapper, "ota updater", 8192, (void *) &FACTORY_OTA_UPDATER, 1, NULL);
         xTaskCreate(StratumManager::taskWrapper, "stratum manager", 8192, (void *) STRATUM_MANAGER, 5, NULL);
 
         if (board->hasHashrateCounter()) {

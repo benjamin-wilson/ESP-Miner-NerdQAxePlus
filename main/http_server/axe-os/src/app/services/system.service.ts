@@ -1,4 +1,4 @@
-import { HttpClient, HttpEvent } from '@angular/common/http';
+import { HttpClient, HttpEvent, HttpParams } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { delay, Observable, of } from 'rxjs';
 import { eASICModel } from '../models/enum/eASICModel';
@@ -19,8 +19,12 @@ const defaultInfo: ISystemInfo = {
   maxVoltage: 4.5,
   minVoltage: 5.5,
   current: 2237.5,
+  currentA: 0,
+  minCurrentA: 0.0,
+  maxCurrentA: 6.0,
   temp: 60,
   vrTemp: 45,
+  vrTempInt: 45,
   hashRateTimestamp: 1724398272483,
   hashRate: 475,
   hashRate_10m: 475,
@@ -48,13 +52,21 @@ const defaultInfo: ISystemInfo = {
   ASICModel: eASICModel.BM1368,
   deviceModel: "NerdQAxe+",
   stratumURL: "public-pool.io",
-  stratumPort: 21496,
+  stratumPort: 3333,
   stratumUser: "bc1q99n3pu025yyu0jlywpmwzalyhm36tg5u37w20d.bitaxe-U1",
   stratumEnonceSubscribe: 0,
+  stratumTLS: 0,
   fallbackStratumURL: "",
   fallbackStratumPort: 3333,
   fallbackStratumUser: "",
   fallbackStratumEnonceSubscribe: 0,
+  fallbackStratumTLS: 0,
+  stratumProtocol: 0,
+  fallbackStratumProtocol: 0,
+  sv2AuthorityPubkey: "",
+  fallbackSv2AuthorityPubkey: "",
+  sv2ChannelType: 0,
+  fallbackSv2ChannelType: 0,
   frequency: 485,
   defaultFrequency: 485,
   version: "2.0",
@@ -65,6 +77,8 @@ const defaultInfo: ISystemInfo = {
   fanspeed: 100,
   manualFanSpeed: 100,
   fanrpm: 0,
+  fanrpm2: 0,
+  fanCount: 1,
   autoscreenoff: 0,
   lastResetReason: "Unknown",
   jobInterval: 1200,
@@ -106,9 +120,13 @@ const defaultInfo: ISystemInfo = {
   boardtemp2: 40,
   overheat_temp: 70,
   history: {
+    hashrate_1m: [],
     hashrate_10m: [],
     hashrate_1h: [],
     hashrate_1d: [],
+    vregTemp: [],
+    asicTemp: [],
+    hasMore: false,
     timestamps: [],
     timestampBase: 0
   }
@@ -140,8 +158,40 @@ export class SystemService {
     return defaultInfo;
   }
 
-  public getInfo(ts: number, uri: string = ''): Observable<ISystemInfo> {
-    return this.httpClient.get(`${uri}/api/system/info?ts=${ts}&cur=${Math.floor(Date.now())}`) as Observable<ISystemInfo>;
+  public getInfo(ts = 0, limit = 0, uri = ''): Observable<ISystemInfo> {
+    let params = new HttpParams();
+
+    if (ts > 0) {
+      params = params
+        .set('ts', ts)
+        .set('cur', Date.now());
+
+      if (limit > 0) {
+        params = params.set('limit', limit);
+      }
+    }
+    const endpoint = `${uri}/api/system/info`;
+    return this.httpClient.get<ISystemInfo>(endpoint, { params });
+  }
+
+  // Home dashboard: request an extended history window (span) without affecting other callers.
+  public getInfoWithSpan(ts = 0, limit = 0, spanMs = 0, uri = ''): Observable<ISystemInfo> {
+    let params = new HttpParams();
+
+    if (ts > 0) {
+      params = params
+        .set('ts', ts)
+        .set('cur', Date.now());
+
+      if (limit > 0) {
+        params = params.set('limit', limit);
+      }
+      if (spanMs > 0) {
+        params = params.set('history_span', spanMs);
+      }
+    }
+    const endpoint = `${uri}/api/system/info`;
+    return this.httpClient.get<ISystemInfo>(endpoint, { params });
   }
 
   public getAsicInfo(uri: string = ''): Observable<AsicInfo> {
@@ -167,6 +217,20 @@ export class SystemService {
     if (totp) headers = headers.set('X-TOTP', totp);
 
     return this.httpClient.post(`${uri}/api/system/restart`, null, {
+      headers,
+      responseType: 'text', // plain text body
+    });
+  }
+
+  public resetStats(uri: string = '') {
+    return this.httpClient.post(`${uri}/api/system/reset-stats`, null, { responseType: 'text' });
+  }
+
+  public shutdown(uri: string = '', totp?: string) {
+    let headers = new HttpHeaders();
+    if (totp) headers = headers.set('X-TOTP', totp);
+
+    return this.httpClient.post(`${uri}/api/system/shutdown`, null, {
       headers,
       responseType: 'text', // plain text body
     });
@@ -234,11 +298,11 @@ export class SystemService {
   }
 
   // GitHub One-Click OTA
-  public performGithubOTAUpdate(url: string, totp?: string) {
+  public performGithubOTAUpdate(url: string, keepConfig: boolean, totp?: string) {
     const headers: Record<string, string> = {};
     if (totp) headers['X-TOTP'] = totp;
 
-    return this.httpClient.post('/api/system/OTA/github', { url }, {
+    return this.httpClient.post('/api/system/OTA/github', { url, keep_config: keepConfig }, {
       responseType: 'text',
       headers,
     });
@@ -304,4 +368,3 @@ export class SystemService {
     return this.httpClient.get('/api/otp/status') as Observable<{ enabled: boolean }>;
   }
 }
-

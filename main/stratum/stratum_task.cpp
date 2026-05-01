@@ -20,6 +20,7 @@
 #include "psram_allocator.h"
 #include "stratum_task.h"
 #include "system.h"
+#include "guards.h"
 
 #define ESP_LOGIE(b, tag, fmt, ...)                                                                                                \
     do {                                                                                                                           \
@@ -34,25 +35,11 @@
 // mkfifo /tmp/ncpipe
 // nc -l -p 4444 < /tmp/ncpipe | nc solo.ckpool.org 3333 > /tmp/ncpipe
 
-int is_socket_connected(int socket)
-{
-    if (socket == -1) {
-        return 0;
-    }
-    struct timeval tv;
-    fd_set writefds;
+// ============================================================================
+// StratumTaskBase
+// ============================================================================
 
-    tv.tv_sec = 0;
-    tv.tv_usec = 100000; // 100 ms timeout
-
-    FD_ZERO(&writefds);
-    FD_SET(socket, &writefds);
-
-    int ret = select(socket + 1, NULL, &writefds, NULL, &tv);
-    return (ret > 0 && FD_ISSET(socket, &writefds)) ? 1 : 0;
-}
-
-StratumTask::StratumTask(StratumManager *manager, int index)
+StratumTaskBase::StratumTaskBase(StratumManager *manager, int index)
     : m_manager(manager), m_index(index)
 {
     if (!index) {
@@ -64,13 +51,13 @@ StratumTask::StratumTask(StratumManager *manager, int index)
     m_config = new StratumConfig(index);
 }
 
-bool StratumTask::isWifiConnected()
+bool StratumTaskBase::isWifiConnected()
 {
     wifi_ap_record_t ap_info;
     return esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK;
 }
 
-bool StratumTask::resolveHostname(const char *hostname, char *ip_str, size_t ip_str_len)
+bool StratumTaskBase::resolveHostname(const char *hostname, char *ip_str, size_t ip_str_len)
 {
     struct addrinfo hints;
     struct addrinfo *res;
@@ -103,7 +90,7 @@ bool StratumTask::resolveHostname(const char *hostname, char *ip_str, size_t ip_
     return true;
 }
 
-int StratumTask::connectStratum(const char *host_ip, uint16_t port)
+int StratumTaskBase::connectStratum(const char *host_ip, uint16_t port)
 {
     struct sockaddr_in dest_addr;
     dest_addr.sin_addr.s_addr = inet_addr(host_ip);
@@ -136,7 +123,7 @@ int StratumTask::connectStratum(const char *host_ip, uint16_t port)
     return sock;
 }
 
-bool StratumTask::setupSocketTimeouts(int sock)
+bool StratumTaskBase::setupSocketTimeouts(int sock)
 {
     // we add timeout to prevent recv to hang forever
     // if it times out on the recv we will check the connection state
@@ -188,145 +175,46 @@ bool StratumTask::setupSocketTimeouts(int sock)
     return true;
 }
 
-void StratumTask::stratumLoop()
-{
-    Board *board = SYSTEM_MODULE.getBoard();
-
-    m_stratumAPI.resetUid();
-    m_stratumAPI.clearBuffer();
-
-    ///// Start Stratum Action
-    // mining.subscribe - ID: 1
-    bool success = m_stratumAPI.subscribe(m_sock, board->getMiningAgent(), board->getAsicModel());
-
-    // mining.configure - ID: 2
-    success = success && m_stratumAPI.configureVersionRolling(m_sock);
-
-    // mining.authorize - ID: 3
-    success = success && m_stratumAPI.authenticate(m_sock, m_config->getUser(), m_config->getPassword());
-
-    // mining.suggest_difficulty - ID: 4
-    success = success && m_stratumAPI.suggestDifficulty(m_sock, Config::getStratumDifficulty());
-
-    // mining.mining.extranonce.subscribe - ID 5
-    if (m_config->isEnonceSubscribeEnabled()) {
-        success = success && m_stratumAPI.entranonceSubscribe(m_sock);
-    }
-
-    if (!success) {
-        ESP_LOGE(m_tag, "Error sending Stratum setup commands!");
-        return;
-    }
-
-    // All Stratum servers should send the first job with clear flag,
-    // but we make sure to clear the jobs on the first job
-    m_firstJob = true;
-
-    char *line = nullptr;
-
-    while (1) {
-        if (!is_socket_connected(m_sock)) {
-            if (Config::isStratumKeepaliveEnabled()) {
-                ESP_LOGW(m_tag, "Socket disconnected — possible TCP KeepAlive timeout (enabled)");
-            } else {
-                ESP_LOGW(m_tag, "Socket disconnected — no KeepAlive active");
-            }
-            break;
-        }
-        line = m_stratumAPI.receiveJsonRpcLine(m_sock);
-        if (!line && !m_reconnect) {
-            ESP_LOGE(m_tag, "Failed to receive JSON-RPC line, reconnecting ...");
-            break;
-        }
-
-        if (m_reconnect) {
-            ESP_LOGI(m_tag, "reconnect requested ...");
-            break;
-        }
-
-        ESP_LOGI(m_tag, "rx: %s", line); // debug incoming stratum messages
-
-        PSRAMAllocator allocator;
-        JsonDocument doc(&allocator);
-
-        // Deserialize JSON
-        // we want to know if it's valid json before the connected callback is executed
-        DeserializationError error = deserializeJson(doc, line);
-        if (error) {
-            ESP_LOGE(m_tag, "Unable to parse JSON: %s", error.c_str());
-            break;
-        }
-
-        // we are pretty confident now that we have valid json and we can
-        // call the connected callback
-        if (!m_isConnected) {
-            connectedCallback();
-            m_isConnected = true;
-        }
-
-        // if stop is requested, don't dispatch anything
-        // and break the loop
-        if (m_stopFlag || POWER_MANAGEMENT_MODULE.isShutdown()) {
-            break;
-        }
-
-        // parse the line
-        m_manager->dispatch(m_index, doc);
-
-        // sets line to nullptr too
-        safe_free(line);
-    }
-
-    safe_free(line);
-}
-
-void StratumTask::connect()
+void StratumTaskBase::connect()
 {
     m_stopFlag = false;
 }
 
-void StratumTask::disconnect()
+void StratumTaskBase::disconnect()
 {
     m_stopFlag = true;
-    if (m_sock >= 0) {
-        shutdown(m_sock, SHUT_RDWR);
-    }
 }
 
-void StratumTask::triggerReconnect() {
+void StratumTaskBase::triggerReconnect() {
     m_reconnect = true;
-    if (m_sock >= 0) {
-        shutdown(m_sock, SHUT_RDWR);
-    }
 }
 
-
-void StratumTask::reconnectTimerCallbackWrapper(TimerHandle_t xTimer)
+void StratumTaskBase::reconnectTimerCallbackWrapper(TimerHandle_t xTimer)
 {
-    StratumTask *self = static_cast<StratumTask *>(pvTimerGetTimerID(xTimer));
+    StratumTaskBase *self = static_cast<StratumTaskBase *>(pvTimerGetTimerID(xTimer));
     self->reconnectTimerCallback(xTimer);
 }
 
 // Reconnect Timer Callback
-void StratumTask::reconnectTimerCallback(TimerHandle_t xTimer)
+void StratumTaskBase::reconnectTimerCallback(TimerHandle_t xTimer)
 {
     m_manager->reconnectTimerCallback(m_index);
 }
 
 // Connected Callback
-void StratumTask::connectedCallback()
+void StratumTaskBase::connectedCallback()
 {
     m_manager->connectedCallback(m_index);
 }
 
 // Disconnected Callback
-void StratumTask::disconnectedCallback()
+void StratumTaskBase::disconnectedCallback()
 {
     m_manager->disconnectedCallback(m_index);
 }
 
 // Start the reconnect timer
-void StratumTask::startReconnectTimer()
+void StratumTaskBase::startReconnectTimer()
 {
     if (m_reconnectTimer == NULL) {
         m_reconnectTimer = xTimerCreate("Reconnect Timer", pdMS_TO_TICKS(30000), pdTRUE, this, reconnectTimerCallbackWrapper);
@@ -339,26 +227,20 @@ void StratumTask::startReconnectTimer()
 }
 
 // Stop the reconnect timer
-void StratumTask::stopReconnectTimer()
+void StratumTaskBase::stopReconnectTimer()
 {
     if (m_reconnectTimer != NULL) {
         xTimerStop(m_reconnectTimer, 0);
     }
 }
 
-void StratumTask::submitShare(const char *jobid, const char *extranonce_2, const uint32_t ntime, const uint32_t nonce,
-                              const uint32_t version)
+void StratumTaskBase::taskWrapper(void *pvParameters)
 {
-    m_stratumAPI.submitShare(m_sock, m_config->getUser(), jobid, extranonce_2, ntime, nonce, version);
-}
-
-void StratumTask::taskWrapper(void *pvParameters)
-{
-    StratumTask *task = (StratumTask *) pvParameters;
+    StratumTaskBase *task = (StratumTaskBase *) pvParameters;
     task->task();
 }
 
-void StratumTask::task()
+void StratumTaskBase::task()
 {
     // Start the reconnect timer
     startReconnectTimer();
@@ -407,7 +289,10 @@ void StratumTask::task()
 
         ESP_LOGI(m_tag, "Connecting to: stratum+tcp://%s:%d (%s)", m_config->getHost(), m_config->getPort(), ip);
 
-        if (!(m_sock = connectStratum(ip, m_config->getPort()))) {
+        // select transport (protocol-specific)
+        m_transport = selectTransport();
+
+        if (!m_transport->connect(m_config->getHost(), ip, m_config->getPort())) {
             ESP_LOGE(m_tag, "Socket unable to connect to %s:%d (errno %d)", m_config->getHost(), m_config->getPort(), errno);
             vTaskDelay(pdMS_TO_TICKS(10000));
             continue;
@@ -415,8 +300,8 @@ void StratumTask::task()
 
         // we are connected but it doesn't mean the server is alive ...
 
-        // stratum loop
-        stratumLoop();
+        // protocol-specific loop
+        protocolLoop();
 
         // track pool errors
         // reconnect request is not an error
@@ -426,12 +311,7 @@ void StratumTask::task()
 
         // shutdown and reconnect
         ESP_LOGIE(m_reconnect, m_tag, "Shutdown socket ...");
-        shutdown(m_sock, SHUT_RDWR);
-
-        if (m_sock >= 0) {
-            close(m_sock);
-            m_sock = -1;
-        }
+        m_transport->close();
 
         disconnectedCallback();
         m_isConnected = false;
@@ -443,4 +323,120 @@ void StratumTask::task()
         vTaskDelay(pdMS_TO_TICKS(10000)); // Delay before attempting to reconnect
     }
     vTaskDelete(NULL);
+}
+
+// ============================================================================
+// StratumTaskV1
+// ============================================================================
+
+StratumTaskV1::StratumTaskV1(StratumManager *manager, int index)
+    : StratumTaskBase(manager, index)
+{
+}
+
+StratumTransport* StratumTaskV1::selectTransport()
+{
+    if (m_config->isTLS()) {
+        return &m_tlsTransport;
+    }
+    return &m_tcpTransport;
+}
+
+void StratumTaskV1::protocolLoop()
+{
+    Board *board = SYSTEM_MODULE.getBoard();
+
+    m_stratumAPI.resetUid();
+    m_stratumAPI.clearBuffer();
+
+    ///// Start Stratum Action
+    // mining.subscribe - ID: 1
+    bool success = m_stratumAPI.subscribe(m_transport, board->getMiningAgent(), board->getAsicModel());
+
+    // mining.configure - ID: 2
+    success = success && m_stratumAPI.configureVersionRolling(m_transport);
+
+    // mining.authorize - ID: 3
+    success = success && m_stratumAPI.authenticate(m_transport, m_config->getUser(), m_config->getPassword());
+
+    // mining.suggest_difficulty - ID: 4
+    success = success && m_stratumAPI.suggestDifficulty(m_transport, Config::getStratumDifficulty());
+
+    // mining.mining.extranonce.subscribe - ID 5
+    if (m_config->isEnonceSubscribeEnabled()) {
+        success = success && m_stratumAPI.entranonceSubscribe(m_transport);
+    }
+
+    if (!success) {
+        ESP_LOGE(m_tag, "Error sending Stratum setup commands!");
+        return;
+    }
+
+    // All Stratum servers should send the first job with clear flag,
+    // but we make sure to clear the jobs on the first job
+    m_firstJob = true;
+
+    char *line = nullptr;
+
+    while (1) {
+        if (!m_transport->isConnected()) {
+            if (Config::isStratumKeepaliveEnabled()) {
+                ESP_LOGW(m_tag, "Socket disconnected — possible TCP KeepAlive timeout (enabled)");
+            } else {
+                ESP_LOGW(m_tag, "Socket disconnected — no KeepAlive active");
+            }
+            break;
+        }
+        line = m_stratumAPI.receiveJsonRpcLine(m_transport);
+
+        // release memory when out of scope
+        MemoryGuard g(line);
+
+        if (!line && !m_reconnect) {
+            ESP_LOGE(m_tag, "Failed to receive JSON-RPC line, reconnecting ...");
+            return;
+        }
+
+        if (m_reconnect) {
+            ESP_LOGI(m_tag, "reconnect requested ...");
+            return;
+        }
+
+        ESP_LOGI(m_tag, "rx: %s", line); // debug incoming stratum messages
+
+        PSRAMAllocator allocator;
+        JsonDocument doc(&allocator);
+
+        // Deserialize JSON
+        // we want to know if it's valid json before the connected callback is executed
+        DeserializationError error = deserializeJson(doc, line);
+        if (error) {
+            ESP_LOGE(m_tag, "Unable to parse JSON: %s", error.c_str());
+            return;
+        }
+
+        // we are pretty confident now that we have valid json and we can
+        // call the connected callback
+        if (!m_isConnected) {
+            connectedCallback();
+            m_isConnected = true;
+        }
+
+        // if stop is requested, don't dispatch anything
+        // and break the loop
+        if (m_stopFlag || POWER_MANAGEMENT_MODULE.isShutdown()) {
+            return;
+        }
+
+        // parse the line
+        m_manager->dispatch(m_index, doc);
+    }
+}
+
+void StratumTaskV1::submitShare(const char *jobid, const char *extranonce_2, const uint32_t ntime, const uint32_t nonce,
+                              const uint32_t version_rolled, const uint32_t version_base)
+{
+    // V1 mining.submit expects version rolling bits (delta), not full version
+    uint32_t version_delta = version_rolled ^ version_base;
+    m_stratumAPI.submitShare(m_transport, m_config->getUser(), jobid, extranonce_2, ntime, nonce, version_delta);
 }

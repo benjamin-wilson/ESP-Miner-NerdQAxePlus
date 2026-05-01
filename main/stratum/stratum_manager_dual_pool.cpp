@@ -9,6 +9,7 @@
 #include "nvs_config.h"
 #include "stratum_manager_dual_pool.h"
 #include "utils.h"
+#include "utils.h"
 
 StratumManagerDualPool::StratumManagerDualPool() : StratumManager(PoolMode::DUAL)
 {
@@ -211,6 +212,7 @@ void StratumManagerDualPool::getManagerInfoJson(JsonObject &obj)
 
         pool["connected"] = m_stratumTasks[i] ? m_stratumTasks[i]->m_isConnected : false;
         pool["poolDifficulty"] = m_poolDifficulty[i];
+        pool["networkDifficulty"] = m_networkDifficulty[i];
         pool["poolDiffErr"] = m_poolDiffErr[i];
         pool["accepted"] = m_accepted[i];
         pool["rejected"] = m_rejected[i];

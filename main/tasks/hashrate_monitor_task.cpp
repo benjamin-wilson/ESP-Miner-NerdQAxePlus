@@ -2,7 +2,8 @@
 #include "hashrate_monitor_task.h"
 #include "boards/board.h"
 #include "esp_log.h"
-#include "mining.h" // for Asic
+#include "mining.h"
+#include "utils.h"
 
 static const char *HR_TAG = "hashrate_monitor";
 static constexpr uint8_t REG_NONCE_TOTAL_CNT = 0x90;
@@ -29,7 +30,7 @@ bool HashrateMonitor::start(Board *board, Asic *asic)
     m_prevCounter = new uint32_t[m_asicCount]();
 
 
-    xTaskCreate(&HashrateMonitor::taskWrapper, "hr_monitor", 4096, (void *) this, 10, NULL);
+    xTaskCreatePSRAM(&HashrateMonitor::taskWrapper, "hr_monitor", 4096, (void *) this, 10, NULL);
     ESP_LOGI(HR_TAG, "started (period=%lums)", m_period_ms);
     return true;
 }
@@ -76,15 +77,10 @@ void HashrateMonitor::publishTotalIfComplete()
         m_logBuffer[offset - 2] = 0; // remove trailing slash
     }
 
-    float hashrate = getTotalChipHashrate();
+    // apply slight 3 tap median filter to remove weird outliers
+    m_hashrate = m_median.update(getTotalChipHashrate());
 
-    History *history = SYSTEM_MODULE.getHistory();
-    if (hashrate && history) {
-        uint64_t timestamp = esp_timer_get_time() / 1000llu;
-        history->pushRate(hashrate, timestamp);
-    }
-
-    ESP_LOGI(HR_TAG, "chip hashrates: %s (total: %.3fGH/s)", m_logBuffer, hashrate);
+    ESP_LOGI(HR_TAG, "chip hashrates: %s (total: %.3fGH/s)", m_logBuffer, m_hashrate);
 }
 
 void HashrateMonitor::taskLoop()
@@ -117,10 +113,10 @@ void HashrateMonitor::taskLoop()
 
         // apply a slight smoothing
         if (!m_smoothedHashrate) {
-            m_smoothedHashrate = getTotalChipHashrate();
+            m_smoothedHashrate = m_hashrate;
         }
 
-        m_smoothedHashrate = 0.5f * m_smoothedHashrate + 0.5f * getTotalChipHashrate();
+        m_smoothedHashrate = 0.5f * m_smoothedHashrate + 0.5f * m_hashrate;
 
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(m_period_ms));
     }

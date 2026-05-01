@@ -75,6 +75,7 @@ void DisplayDriver::loadSettings() {
     m_isAutoScreenOffEnabled = Config::isAutoScreenOffEnabled();
     m_tempControlMode = Config::getTempControlMode();
     m_fanSpeed = Config::getFanSpeed();
+    m_showFoundBlockEnabled = Config::isShowBlockFoundEnabled();
 
     // when setting was changed, turn on the display LED
     if (!m_isAutoScreenOffEnabled) {
@@ -257,6 +258,11 @@ void DisplayDriver::showFoundBlockOverlay() {
     PThreadGuard lock(m_lvglMutex);
     // hide the overlay and free the memory in case it was open
     m_ui->hideImageOverlay();
+
+    // not enabled?
+    if (!m_showFoundBlockEnabled) {
+        return;
+    }
 
     // now show the (new) image overlay
     m_ui->showImageOverlay(&ui_img_found_block_png);
@@ -622,6 +628,8 @@ void DisplayDriver::lvglTimerTask(void *param)
         uint32_t wait_ms = handleLvglTick(elapsed_Ani_cycles);
 
         if (POWER_MANAGEMENT_MODULE.isShutdown()) {
+            // switch into poweroff state
+            enterState(UiState::PowerOff, tnow);
             vTaskDelay(pdMS_TO_TICKS(wait_ms));
             continue;
         }
@@ -797,7 +805,8 @@ void DisplayDriver::updateHashrate(System *module, StratumManager* manager, floa
     char strData[20];
     char strDataActive[20];
 
-    float efficiency = power / (SYSTEM_MODULE.getCurrentHashrate() / 1000.0);
+    float hr = SYSTEM_MODULE.getCurrentHashrate() / 1000.0f;
+    float efficiency = (hr > 0) ? power / hr : 10000.0f;
     float hashrate = SYSTEM_MODULE.getCurrentHashrate();
     formatHashrate(strData, sizeof(strData), hashrate);
 
@@ -818,7 +827,7 @@ void DisplayDriver::updateHashrate(System *module, StratumManager* manager, floa
     lv_label_set_text(m_ui->ui_lblHashPrice, strData);  // Update hashrate
 
     snprintf(strData, sizeof(strData), "%.1f", efficiency);
-    lv_label_set_text(m_ui->ui_lbEficiency, strData); // Update eficiency label
+    lv_label_set_text(m_ui->ui_lbEficiency, (efficiency < 10000.0f) ? strData : "n/a"); // Update eficiency label
 
     snprintf(strData, sizeof(strData), "%.3fW", power);
     lv_label_set_text(m_ui->ui_lbPower, strData); // Actualiza el label
