@@ -19,6 +19,7 @@
 #include "boards/nerdoctaxeplus.h"
 #include "boards/nerdqaxeplus.h"
 #include "boards/nerdqaxeplus2.h"
+#include "boards/nerdqaxeplus2tps546.h"
 #include "boards/nerdqx.h"
 #include "create_jobs_task.h"
 #include "discord.h"
@@ -215,6 +216,9 @@ extern "C" void app_main(void)
 #ifdef NERDQAXEPLUS2
     Board *board = new NerdQaxePlus2();
 #endif
+#ifdef NERDQAXEPLUS2TPS546
+    Board *board = new NerdQaxePlus2TPS546();
+#endif
 #ifdef NERDOCTAXEPLUS
     Board *board = new NerdOctaxePlus();
 #endif
@@ -276,8 +280,8 @@ extern "C" void app_main(void)
 
 
     // when a username is configured we will continue with startup and start mining
-    const char *username = Config::nvs_config_get_string(NVS_CONFIG_STRATUM_USER, NULL); // TODO
-    if (username) {
+    char *username = Config::getStratumUser();
+    if (username && username[0] != '\0') {
         // wifi is connected, switch the AP off
         wifi_softap_off();
 

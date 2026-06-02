@@ -73,6 +73,9 @@ void FanController::loadSettings()
         m_config[ch].mode         = static_cast<Mode>(Config::getFanMode(ch));
         m_config[ch].manualSpeed  = Config::getFanManualSpeed(ch);
         m_config[ch].overheatTemp = Config::getFanOverheatTemp(ch);
+        if (ch == 1 && m_board->handlesVRTempFaults()) {
+            m_config[ch].overheatTemp = 0;
+        }
         m_config[ch].pid.targetTemp = Config::getFanPidTargetTemp(ch, bp->targetTemp);
         m_config[ch].pid.p          = Config::getFanPidP(ch, bp->p);
         m_config[ch].pid.i          = Config::getFanPidI(ch, bp->i);
@@ -88,7 +91,7 @@ void FanController::update(float chipTempMax, float vrTemp)
     float tempInput[MAX_FANS] = { chipTempMax, vrTemp };
 
     // only 2nd channel can be linked
-#ifndef NERDQAXEPLUS2
+#if !defined(NERDQAXEPLUS2) && !defined(NERDQAXEPLUS2TPS546)
     if (m_config[1].mode == Mode::LINKED) {
         tempInput[0] = fmaxf(chipTempMax, vrTemp);
     }

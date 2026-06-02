@@ -288,6 +288,11 @@ public:
         return m_vr_maxTemp;
     }
 
+    virtual bool handlesVRTempFaults()
+    {
+        return false;
+    }
+
     int getNumTempSensors()
     {
         return m_numTempSensors;

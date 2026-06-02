@@ -16,6 +16,8 @@ jobs:
             label: NerdOCTAXE+
           - board: NERDQAXEPLUS2
             label: NerdQAxe++
+          - board: NERDQAXEPLUS2TPS546
+            label: NerdQAxe++TPS546
           - board: NERDAXE
             label: NerdAxe
           - board: NERDOCTAXEGAMMA

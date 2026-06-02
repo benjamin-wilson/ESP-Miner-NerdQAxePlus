@@ -36,6 +36,9 @@ export class HeaderComponent implements OnInit, OnDestroy {
 
   // Transparent 16x16 placeholder (must exist in /assets)
   private static readonly PLACEHOLDER_LOGO = '/assets/default_dark.png';
+  private static readonly LOGO_ALIASES: Record<string, string> = {
+    'NerdQAxe++ TPS546': 'NerdQAxe++',
+  };
 
   userMenu = [{ title: 'Profile' }, { title: 'Log out' }];
   info$: Observable<ISystemInfo>;
@@ -88,8 +91,8 @@ export class HeaderComponent implements OnInit, OnDestroy {
     this.infoService.getInfo().subscribe(info => {
       if (info?.deviceModel) {
         // Replace gamma symbol with "Gamma" to match asset filenames if needed
-        this.deviceModel = String(info.deviceModel).replace('γ', 'Gamma');
-        this.logoBaseName = String(info.deviceModel).trim();
+        this.deviceModel = String(info.deviceModel).trim().replace('γ', 'Gamma');
+        this.logoBaseName = HeaderComponent.LOGO_ALIASES[this.deviceModel] ?? this.deviceModel;
       }
 
       // Prefer backend default theme if no valid saved theme is present
@@ -183,7 +186,7 @@ export class HeaderComponent implements OnInit, OnDestroy {
 
     // Choose logo variant based on theme ("default" is the light theme in Nebular).
     const logoVariant = this.currentTheme === 'default' ? 'light' : 'dark';
-    this.logoPath = `/assets/${this.deviceModel}_${logoVariant}.png`;
+    this.logoPath = `/assets/${this.logoBaseName ?? this.deviceModel}_${logoVariant}.png`;
   }
 
   // --- Helpers for theme resolution ---

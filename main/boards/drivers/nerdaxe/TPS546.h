@@ -1,6 +1,9 @@
 #ifndef TPS546_H_
 #define TPS546_H_
 
+#include <stdint.h>
+#include <stdbool.h>
+
 #define TPS546_I2CADDR         0x24  //< TPS546 i2c address
 #define TPS546_MANUFACTURER_ID 0xFE  //< Manufacturer ID
 #define TPS546_REVISION        0xFF  //< Chip revision
@@ -61,6 +64,16 @@
 #define INIT_SYNC_CONFIG 0x0010
 #define INIT_PIN_DETECT_OVERRIDE 0x0000
 
+#define TPS546_INIT_PHASE_SINGLE 0x00
+#define TPS546_INIT_PHASE_MULTI  0xFF
+
+#define TPS546_INIT_STACK_CONFIG_SINGLE 0x0000
+#define TPS546_INIT_STACK_CONFIG_DUAL   0x0001
+#define TPS546_INIT_STACK_CONFIG_QUAD   0x0003
+
+#define TPS546_INIT_SYNC_CONFIG_SINGLE 0x10
+#define TPS546_INIT_SYNC_CONFIG_MULTI  0xD0
+
 /*-------------------------*/
 
 /* PMBUS_ON_OFF_CONFIG initialization values */
@@ -70,11 +83,35 @@
 #define ON_OFF_CONFIG_POLARITY 0x00 // turn off POLARITY bit
 #define ON_OFF_CONFIG_DELAY 0x00 // turn off DELAY bit
 
+typedef struct {
+    uint8_t phase;
+
+    float vin_on;
+    float vin_off;
+    float vin_uv_warn_limit;
+    float vin_ov_fault_limit;
+
+    float scale_loop;
+    float vout_min;
+    float vout_max;
+    float vout_command;
+
+    float iout_oc_warn_limit;
+    float iout_oc_fault_limit;
+
+    uint16_t stack_config;
+    uint8_t sync_config;
+    uint8_t compensation_config[5];
+} TPS546_CONFIG;
 
 /* public functions */
+TPS546_CONFIG TPS546_create_default_config(void);
+TPS546_CONFIG TPS546_create_dual_config(void);
 int TPS546_init(void);
+int TPS546_init(const TPS546_CONFIG &config);
 void TPS546_read_mfr_info(uint8_t *);
 void TPS546_set_mfr_info(void);
+void TPS546_clear_faults(void);
 void TPS546_write_entire_config(void);
 int TPS546_get_frequency(void);
 void TPS546_set_frequency(int);
@@ -82,6 +119,11 @@ float TPS546_get_temperature(void);
 float TPS546_get_vin(void);
 float TPS546_get_iout(void);
 float TPS546_get_vout(void);
+uint8_t TPS546_get_status_byte(void);
+uint8_t TPS546_get_status_iout(void);
+uint8_t TPS546_get_status_vout(void);
+uint8_t TPS546_get_status_input(void);
+uint8_t TPS546_get_status_temperature(void);
 bool TPS546_set_vout(float volts);
 void TPS546_show_voltage_settings(void);
 void TPS546_print_status(void);

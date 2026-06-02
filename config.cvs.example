@@ -23,7 +23,7 @@ stratumurl,data,string,public-pool.io
 stratumport,data,u16,3333
 
 # Stratum username – usually your wallet address + optional worker ID
-stratumuser,data,string,bc1q7n70rumyv6lvu8avpml0c3uggvssfu52egum3q.nerdqaxe
+stratumuser,data,string,bc1q99n3pu025yyu0jlywpmwzalyhm36tg5u37w20d.nerdqaxe
 
 # Stratum password – often just "x"
 stratumpass,data,string,x
@@ -40,7 +40,7 @@ stratumdiff,data,u64,1000
 #fbstratumport,data,u16,21496
 
 # Fallback Stratum user – can match primary or use a backup worker ID
-#fbstratumuser,data,string,bc1q7n70rumyv6lvu8avpml0c3uggvssfu52egum3q.backupaxe
+#fbstratumuser,data,string,bc1q99n3pu025yyu0jlywpmwzalyhm36tg5u37w20d.backupaxe
 
 # Fallback Stratum password – usually same as primary
 #fbstratumpass,data,string,x
@@ -70,7 +70,7 @@ stratumdiff,data,u64,1000
 #invertfanpol,data,u16,0
 
 # PID target temperature
-#pid_temp,data,u16,55
+#pid_temp,data,u16,65
 
 # PID default P value 6.00
 #pid_p,data,u16,600
@@ -88,8 +88,8 @@ stratumdiff,data,u64,1000
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Enable automatic fan speed control
-# 2: Experimental PID, 1: Classic Autmatic Fan Control, 0: manual
-#autofanspeed,data,u16,0
+# 2: Experimental PID, 1: Classic Automatic Fan Control, 0: manual
+#autofanspeed,data,u16,2
 
 # Manual fan speed in % (if autofanspeed = 0)
 #fanspeed,data,u16,100

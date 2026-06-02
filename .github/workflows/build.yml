@@ -18,6 +18,9 @@ jobs:
           - board: NERDQAXEPLUS2
             upload_www: false
             label: NerdQAxe++
+          - board: NERDQAXEPLUS2TPS546
+            upload_www: false
+            label: NerdQAxe++TPS546
           - board: NERDAXE
             upload_www: false
             label: NerdAxe
